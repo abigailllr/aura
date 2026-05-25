@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from services.firebase import init_firebase
-from routes import conversations, people, health, ai
+from routes import conversations, people, health, ai, relationships
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 
@@ -28,6 +28,7 @@ app.include_router(conversations.router, prefix="/conversations", tags=["convers
 app.include_router(people.router, prefix="/people", tags=["people"])
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(ai.router, prefix="/ai", tags=["ai"])
+app.include_router(relationships.router, prefix="/relationships", tags=["relationships"])
 
 
 @app.get("/")
