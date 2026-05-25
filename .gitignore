@@ -147,6 +147,10 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# Credentials — never commit these
+firebase-credentials.json
+calendar-credentials.json
+
 # Environments
 .env
 .envrc
