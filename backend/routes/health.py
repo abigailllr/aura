@@ -1,8 +1,9 @@
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 from models.health import BiometricReading
 from services import firebase, claude
+from services.auth import verify_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -11,18 +12,18 @@ MIN_READINGS_FOR_ANALYSIS = 10
 
 
 @router.post("/biometrics")
-async def save_biometric(reading: BiometricReading):
-    doc_id = firebase.save_biometric(reading.user_id, reading.model_dump())
+async def save_biometric(reading: BiometricReading, user_id: str = Depends(verify_token)):
+    doc_id = firebase.save_biometric(user_id, reading.model_dump(exclude={"user_id"}))
     return {"id": doc_id}
 
 
-@router.get("/{user_id}/biometrics")
-async def get_biometrics(user_id: str, limit: int = 500):
+@router.get("/biometrics")
+async def get_biometrics(limit: int = 500, user_id: str = Depends(verify_token)):
     return firebase.get_biometrics(user_id, limit)
 
 
-@router.get("/{user_id}/energy")
-async def get_energy_profile(user_id: str):
+@router.get("/energy")
+async def get_energy_profile(user_id: str = Depends(verify_token)):
     history = firebase.get_biometrics(user_id, limit=500)
 
     if len(history) < MIN_READINGS_FOR_ANALYSIS:
@@ -42,8 +43,8 @@ async def get_energy_profile(user_id: str):
     return profile
 
 
-@router.get("/{user_id}/state")
-async def get_current_state(user_id: str):
+@router.get("/state")
+async def get_current_state(user_id: str = Depends(verify_token)):
     readings = firebase.get_biometrics(user_id, limit=3)
 
     if not readings:

@@ -1,23 +1,29 @@
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
-from models.conversation import AudioRequest
 from services import whisper, claude, firebase
+from services.auth import verify_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class VoiceRequest(BaseModel):
+    audio_base64: str
+    mime_type: str = "audio/wav"
+
+
 @router.post("/voice")
-async def voice_to_ai(req: AudioRequest):
+async def voice_to_ai(req: VoiceRequest, user_id: str = Depends(verify_token)):
     try:
         transcript = whisper.transcribe(req.audio_base64, req.mime_type)
     except Exception as e:
         logger.error("Whisper transcription failed: %s", e)
         raise HTTPException(status_code=422, detail="Audio transcription failed")
 
-    history = firebase.get_conversations(req.user_id, limit=5)
+    history = firebase.get_conversations(user_id, limit=5)
     messages = []
     for convo in reversed(history):
         messages.extend(convo.get("messages", []))
@@ -29,7 +35,7 @@ async def voice_to_ai(req: AudioRequest):
         logger.error("Claude request failed: %s", e)
         raise HTTPException(status_code=502, detail="AI response failed")
 
-    firebase.save_conversation(req.user_id, messages + [
+    firebase.save_conversation(user_id, messages + [
         {"role": "assistant", "content": response}
     ])
 
@@ -37,14 +43,14 @@ async def voice_to_ai(req: AudioRequest):
 
 
 @router.post("/voice/stream")
-async def voice_to_ai_stream(req: AudioRequest):
+async def voice_to_ai_stream(req: VoiceRequest, user_id: str = Depends(verify_token)):
     try:
         transcript = whisper.transcribe(req.audio_base64, req.mime_type)
     except Exception as e:
         logger.error("Whisper transcription failed: %s", e)
         raise HTTPException(status_code=422, detail="Audio transcription failed")
 
-    history = firebase.get_conversations(req.user_id, limit=5)
+    history = firebase.get_conversations(user_id, limit=5)
     messages = []
     for convo in reversed(history):
         messages.extend(convo.get("messages", []))
@@ -55,7 +61,7 @@ async def voice_to_ai_stream(req: AudioRequest):
         async for chunk in claude.ask_stream(messages):
             full_response += chunk
             yield chunk
-        firebase.save_conversation(req.user_id, messages + [
+        firebase.save_conversation(user_id, messages + [
             {"role": "assistant", "content": full_response}
         ])
 

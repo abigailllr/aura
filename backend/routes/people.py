@@ -1,36 +1,42 @@
 import base64
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from firebase_admin import firestore
+from pydantic import BaseModel
 
-from models.person import Person, FaceScanRequest
+from models.person import Person
 from services import firebase, pinecone_client, claude
+from services.auth import verify_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class FaceScanRequest(BaseModel):
+    image_base64: str
+    context: str | None = None
+
+
 @router.post("/save")
-async def save_person(person: Person):
-    person_id = firebase.save_person(person.user_id, person.model_dump(exclude={"id"}))
+async def save_person(person: Person, user_id: str = Depends(verify_token)):
+    person_id = firebase.save_person(user_id, person.model_dump(exclude={"id", "user_id"}))
     return {"id": person_id}
 
 
 @router.post("/scan")
-async def scan_face(req: FaceScanRequest):
-    person_id = pinecone_client.find_face(req.user_id, req.image_base64)
+async def scan_face(req: FaceScanRequest, user_id: str = Depends(verify_token)):
+    person_id = pinecone_client.find_face(user_id, req.image_base64)
 
     if not person_id:
         return {"known": False}
 
-    people = firebase.get_people(req.user_id)
+    people = firebase.get_people(user_id)
     person = next((p for p in people if p["id"] == person_id), None)
 
     if not person:
         return {"known": False}
 
     firebase.update_person(person_id, {"last_seen": firestore.SERVER_TIMESTAMP})
-
     notes = person.get("notes", "")
     whisper_text = f"{person['name']}. {notes}".strip().rstrip(".")
 
@@ -38,13 +44,13 @@ async def scan_face(req: FaceScanRequest):
 
 
 @router.post("/introduce")
-async def introduce_person(req: FaceScanRequest):
+async def introduce_person(req: FaceScanRequest, user_id: str = Depends(verify_token)):
     if not req.context:
         raise HTTPException(status_code=422, detail="context is required")
 
     context = claude.extract_person_context(req.context)
 
-    person_id = firebase.save_person(req.user_id, {
+    person_id = firebase.save_person(user_id, {
         "name": context.name,
         "notes": context.notes,
         "job": context.job,
@@ -53,9 +59,9 @@ async def introduce_person(req: FaceScanRequest):
 
     if req.image_base64:
         try:
-            pinecone_client.upsert_face(person_id, req.user_id, req.image_base64)
+            pinecone_client.upsert_face(person_id, user_id, req.image_base64)
             image_bytes = base64.b64decode(req.image_base64)
-            photo_url = firebase.upload_photo(req.user_id, image_bytes, person_id)
+            photo_url = firebase.upload_photo(user_id, image_bytes, person_id)
             firebase.update_person(person_id, {
                 "photo_url": photo_url,
                 "face_embedding_id": person_id,
@@ -66,13 +72,13 @@ async def introduce_person(req: FaceScanRequest):
     return {"id": person_id, "name": context.name}
 
 
-@router.get("/{user_id}")
-async def get_people(user_id: str):
+@router.get("/")
+async def get_people(user_id: str = Depends(verify_token)):
     return firebase.get_people(user_id)
 
 
-@router.get("/{user_id}/relationships")
-async def get_relationship_insights(user_id: str):
+@router.get("/relationships")
+async def get_relationship_insights(user_id: str = Depends(verify_token)):
     people = firebase.get_people(user_id)
 
     if not people:
