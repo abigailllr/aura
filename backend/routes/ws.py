@@ -5,6 +5,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from firebase_admin import auth
 
 from services import whisper, claude, firebase, tts
+from services.connection_manager import manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -106,6 +107,7 @@ async def websocket_endpoint(websocket: WebSocket):
     if not user_id:
         return
 
+    manager.connect(user_id, websocket)
     logger.info("WebSocket connected: %s", user_id)
 
     try:
@@ -129,4 +131,5 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "error", "detail": f"unknown type: {msg_type}"})
 
     except WebSocketDisconnect:
+        manager.disconnect(user_id, websocket)
         logger.info("WebSocket disconnected: %s", user_id)

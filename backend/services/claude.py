@@ -104,3 +104,36 @@ def extract_person_context(transcript: str) -> _PersonContext:
         }],
     )
     return response.parsed_output
+
+
+class _ProactiveInsight(BaseModel):
+    should_notify: bool
+    text: str | None = None
+
+
+def generate_proactive_insight(
+    biometrics: list[dict],
+    people: list[dict],
+    conversations: list[dict],
+) -> str | None:
+    response = client.messages.parse(
+        model="claude-opus-4-6",
+        max_tokens=256,
+        output_format=_ProactiveInsight,
+        messages=[{
+            "role": "user",
+            "content": (
+                "You are Aura, a proactive AI on a wearable bracelet. "
+                "Analyze the user's current state and decide if they need a nudge right now. "
+                "Only notify if something genuinely actionable is happening: low energy before a demanding task, "
+                "a relationship going cold, or a pattern worth breaking. "
+                "If nothing noteworthy, set should_notify to false. "
+                "If notifying, write one short sentence. Direct, no fluff.\n\n"
+                f"Biometrics (recent first): {biometrics}\n"
+                f"People they know: {people}\n"
+                f"Recent conversations: {conversations}"
+            ),
+        }],
+    )
+    result = response.parsed_output
+    return result.text if result.should_notify else None
