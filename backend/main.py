@@ -9,7 +9,7 @@ from slowapi.errors import RateLimitExceeded
 from services.firebase import init_firebase
 from services import proactive
 from services.limiter import limiter
-from routes import conversations, people, health, ai, relationships, scheduling, ws, fcm, gestures
+from routes import conversations, people, health, ai, relationships, scheduling, ws, fcm, gestures, settings
 from routes import proactive as proactive_routes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -55,6 +55,7 @@ app.include_router(scheduling.router, prefix="/scheduling", tags=["scheduling"])
 app.include_router(proactive_routes.router, prefix="/proactive", tags=["proactive"])
 app.include_router(fcm.router, prefix="/fcm", tags=["fcm"])
 app.include_router(gestures.router, prefix="/gestures", tags=["gestures"])
+app.include_router(settings.router, prefix="/settings", tags=["settings"])
 app.include_router(ws.router, tags=["ws"])
 
 

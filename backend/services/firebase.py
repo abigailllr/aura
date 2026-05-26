@@ -121,6 +121,15 @@ def upload_photo(user_id: str, image_bytes: bytes, person_id: str) -> str:
     return blob.public_url
 
 
+def get_settings(user_id: str) -> dict | None:
+    doc = db().collection("settings").document(user_id).get()
+    return doc.to_dict() if doc.exists else None
+
+
+def save_settings(user_id: str, patch: dict):
+    db().collection("settings").document(user_id).set(patch, merge=True)
+
+
 def save_fcm_token(user_id: str, token: str):
     db().collection("fcm_tokens").document(user_id).set({"token": token})
 

@@ -54,7 +54,9 @@ async def voice_to_ai(request: Request, req: VoiceRequest, user_id: str = Depend
 
     if req.speak:
         try:
-            result["audio_base64"] = await asyncio.to_thread(tts.synthesize, response)
+            user_settings = await asyncio.to_thread(firebase.get_settings, user_id)
+            voice = (user_settings or {}).get("voice", "nova")
+            result["audio_base64"] = await asyncio.to_thread(tts.synthesize, response, voice)
         except Exception as e:
             logger.error("TTS synthesis failed: %s", e)
 

@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 
 
 async def check_user(user_id: str):
+    user_settings = await asyncio.to_thread(firebase.get_settings, user_id)
+    if user_settings and not user_settings.get("proactive_enabled", True):
+        return
+
     biometrics = await asyncio.to_thread(firebase.get_biometrics, user_id, 10)
     if not biometrics:
         return
