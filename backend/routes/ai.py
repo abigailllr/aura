@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from services import whisper, claude, firebase
+from services import whisper, claude, firebase, tts
 from services.auth import verify_token
 
 logger = logging.getLogger(__name__)
@@ -13,6 +13,12 @@ router = APIRouter()
 class VoiceRequest(BaseModel):
     audio_base64: str
     mime_type: str = "audio/wav"
+    speak: bool = False
+
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "nova"
 
 
 @router.post("/voice")
@@ -39,7 +45,15 @@ async def voice_to_ai(req: VoiceRequest, user_id: str = Depends(verify_token)):
         {"role": "assistant", "content": response}
     ])
 
-    return {"transcript": transcript, "response": response}
+    result = {"transcript": transcript, "response": response}
+
+    if req.speak:
+        try:
+            result["audio_base64"] = tts.synthesize(response)
+        except Exception as e:
+            logger.error("TTS synthesis failed: %s", e)
+
+    return result
 
 
 @router.post("/voice/stream")
@@ -66,3 +80,14 @@ async def voice_to_ai_stream(req: VoiceRequest, user_id: str = Depends(verify_to
         ])
 
     return StreamingResponse(generate(), media_type="text/plain")
+
+
+@router.post("/speak")
+async def speak(req: TTSRequest, user_id: str = Depends(verify_token)):
+    try:
+        audio = tts.synthesize(req.text, req.voice)
+    except Exception as e:
+        logger.error("TTS synthesis failed for user %s: %s", user_id, e)
+        raise HTTPException(status_code=502, detail="Speech synthesis failed")
+
+    return {"audio_base64": audio, "mime_type": "audio/mp3"}
