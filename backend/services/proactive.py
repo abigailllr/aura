@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from services import firebase, claude
+from services import firebase, claude, fcm
 from services.connection_manager import manager
 
 logger = logging.getLogger(__name__)
@@ -23,8 +23,18 @@ async def check_user(user_id: str):
         return
 
     await asyncio.to_thread(firebase.save_insight, user_id, insight)
-    await manager.push(user_id, {"type": "insight", "text": insight})
-    logger.info("Proactive insight sent to user %s", user_id)
+
+    if manager.is_connected(user_id):
+        await manager.push(user_id, {"type": "insight", "text": insight})
+    else:
+        fcm_token = await asyncio.to_thread(firebase.get_fcm_token, user_id)
+        if fcm_token:
+            try:
+                await asyncio.to_thread(fcm.send, fcm_token, "Aura", insight)
+            except Exception as e:
+                logger.error("FCM push failed for user %s: %s", user_id, e)
+
+    logger.info("Proactive insight delivered to user %s", user_id)
 
 
 async def run():

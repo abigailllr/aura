@@ -121,6 +121,15 @@ def upload_photo(user_id: str, image_bytes: bytes, person_id: str) -> str:
     return blob.public_url
 
 
+def save_fcm_token(user_id: str, token: str):
+    db().collection("fcm_tokens").document(user_id).set({"token": token})
+
+
+def get_fcm_token(user_id: str) -> str | None:
+    doc = db().collection("fcm_tokens").document(user_id).get()
+    return doc.to_dict().get("token") if doc.exists else None
+
+
 def get_active_user_ids(since_hours: int = 24) -> list[str]:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
     docs = (
