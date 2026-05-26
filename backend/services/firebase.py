@@ -96,6 +96,24 @@ def get_biometrics(user_id: str, limit: int = 500) -> list[dict]:
     return [d.to_dict() for d in docs]
 
 
+def delete_conversation(user_id: str, conversation_id: str) -> bool:
+    ref = db().collection("conversations").document(conversation_id)
+    doc = ref.get()
+    if not doc.exists or doc.to_dict().get("user_id") != user_id:
+        return False
+    ref.delete()
+    return True
+
+
+def save_energy_profile(user_id: str, profile: dict):
+    db().collection("energy_profiles").document(user_id).set(profile)
+
+
+def get_energy_profile(user_id: str) -> dict | None:
+    doc = db().collection("energy_profiles").document(user_id).get()
+    return doc.to_dict() if doc.exists else None
+
+
 def upload_photo(user_id: str, image_bytes: bytes, person_id: str) -> str:
     blob = bucket().blob(f"people/{user_id}/{person_id}.jpg")
     blob.upload_from_string(image_bytes, content_type="image/jpeg")
