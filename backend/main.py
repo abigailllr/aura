@@ -1,11 +1,14 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
 from services.firebase import init_firebase
 from services import proactive
+from services.limiter import limiter
 from routes import conversations, people, health, ai, relationships, scheduling, ws, fcm
 from routes import proactive as proactive_routes
 
@@ -30,6 +33,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="aura", lifespan=lifespan)
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(status_code=429, content={"detail": "too many requests"})
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,10 +1,11 @@
 import asyncio
 import logging
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 
 from services import firebase
 from services.auth import verify_token
+from services.limiter import limiter
 from services.calendar import (
     get_calendar_service,
     fetch_events,
@@ -28,7 +29,8 @@ class RescheduleRequest(BaseModel):
 
 
 @router.post("/analyze")
-async def analyze_schedule(req: TokenRequest, user_id: str = Depends(verify_token)):
+@limiter.limit("10/minute")
+async def analyze_schedule(request: Request, req: TokenRequest, user_id: str = Depends(verify_token)):
     energy_profile = await asyncio.to_thread(firebase.get_energy_profile, user_id)
 
     if not energy_profile:
@@ -51,7 +53,8 @@ async def analyze_schedule(req: TokenRequest, user_id: str = Depends(verify_toke
 
 
 @router.post("/reschedule")
-async def reschedule(req: RescheduleRequest, user_id: str = Depends(verify_token)):
+@limiter.limit("10/minute")
+async def reschedule(request: Request, req: RescheduleRequest, user_id: str = Depends(verify_token)):
     try:
         service = await asyncio.to_thread(get_calendar_service, req.token)
         await asyncio.to_thread(reschedule_event, service, req.event_id, req.new_start, req.new_end)

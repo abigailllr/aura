@@ -1,11 +1,12 @@
 import asyncio
 import logging
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from services import whisper, claude, firebase, tts
 from services.auth import verify_token
+from services.limiter import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,7 +24,8 @@ class TTSRequest(BaseModel):
 
 
 @router.post("/voice")
-async def voice_to_ai(req: VoiceRequest, user_id: str = Depends(verify_token)):
+@limiter.limit("20/minute")
+async def voice_to_ai(request: Request, req: VoiceRequest, user_id: str = Depends(verify_token)):
     try:
         transcript = await asyncio.to_thread(whisper.transcribe, req.audio_base64, req.mime_type)
     except Exception as e:
@@ -60,7 +62,8 @@ async def voice_to_ai(req: VoiceRequest, user_id: str = Depends(verify_token)):
 
 
 @router.post("/voice/stream")
-async def voice_to_ai_stream(req: VoiceRequest, user_id: str = Depends(verify_token)):
+@limiter.limit("20/minute")
+async def voice_to_ai_stream(request: Request, req: VoiceRequest, user_id: str = Depends(verify_token)):
     try:
         transcript = await asyncio.to_thread(whisper.transcribe, req.audio_base64, req.mime_type)
     except Exception as e:
@@ -88,7 +91,8 @@ async def voice_to_ai_stream(req: VoiceRequest, user_id: str = Depends(verify_to
 
 
 @router.post("/speak")
-async def speak(req: TTSRequest, user_id: str = Depends(verify_token)):
+@limiter.limit("30/minute")
+async def speak(request: Request, req: TTSRequest, user_id: str = Depends(verify_token)):
     try:
         audio = await asyncio.to_thread(tts.synthesize, req.text, req.voice)
     except Exception as e:

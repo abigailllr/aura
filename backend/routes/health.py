@@ -1,10 +1,11 @@
 import asyncio
 import logging
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 
 from models.health import BiometricReading
 from services import firebase, claude
 from services.auth import verify_token
+from services.limiter import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -13,7 +14,8 @@ MIN_READINGS_FOR_ANALYSIS = 10
 
 
 @router.post("/biometrics")
-async def save_biometric(reading: BiometricReading, user_id: str = Depends(verify_token)):
+@limiter.limit("120/minute")
+async def save_biometric(request: Request, reading: BiometricReading, user_id: str = Depends(verify_token)):
     doc_id = await asyncio.to_thread(
         firebase.save_biometric, user_id, reading.model_dump(exclude={"user_id"})
     )
@@ -26,7 +28,8 @@ async def get_biometrics(limit: int = 500, user_id: str = Depends(verify_token))
 
 
 @router.get("/energy")
-async def get_energy_profile(user_id: str = Depends(verify_token)):
+@limiter.limit("10/minute")
+async def get_energy_profile(request: Request, user_id: str = Depends(verify_token)):
     history = await asyncio.to_thread(firebase.get_biometrics, user_id, 500)
 
     if len(history) < MIN_READINGS_FOR_ANALYSIS:
