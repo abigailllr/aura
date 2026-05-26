@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
@@ -24,32 +25,34 @@ class TTSRequest(BaseModel):
 @router.post("/voice")
 async def voice_to_ai(req: VoiceRequest, user_id: str = Depends(verify_token)):
     try:
-        transcript = whisper.transcribe(req.audio_base64, req.mime_type)
+        transcript = await asyncio.to_thread(whisper.transcribe, req.audio_base64, req.mime_type)
     except Exception as e:
         logger.error("Whisper transcription failed: %s", e)
         raise HTTPException(status_code=422, detail="Audio transcription failed")
 
-    history = firebase.get_conversations(user_id, limit=5)
+    history = await asyncio.to_thread(firebase.get_conversations, user_id, 5)
     messages = []
     for convo in reversed(history):
         messages.extend(convo.get("messages", []))
     messages.append({"role": "user", "content": transcript})
 
     try:
-        response = claude.ask(messages)
+        response = await asyncio.to_thread(claude.ask, messages)
     except Exception as e:
         logger.error("Claude request failed: %s", e)
         raise HTTPException(status_code=502, detail="AI response failed")
 
-    firebase.save_conversation(user_id, messages + [
-        {"role": "assistant", "content": response}
-    ])
+    await asyncio.to_thread(
+        firebase.save_conversation,
+        user_id,
+        messages + [{"role": "assistant", "content": response}],
+    )
 
     result = {"transcript": transcript, "response": response}
 
     if req.speak:
         try:
-            result["audio_base64"] = tts.synthesize(response)
+            result["audio_base64"] = await asyncio.to_thread(tts.synthesize, response)
         except Exception as e:
             logger.error("TTS synthesis failed: %s", e)
 
@@ -59,12 +62,12 @@ async def voice_to_ai(req: VoiceRequest, user_id: str = Depends(verify_token)):
 @router.post("/voice/stream")
 async def voice_to_ai_stream(req: VoiceRequest, user_id: str = Depends(verify_token)):
     try:
-        transcript = whisper.transcribe(req.audio_base64, req.mime_type)
+        transcript = await asyncio.to_thread(whisper.transcribe, req.audio_base64, req.mime_type)
     except Exception as e:
         logger.error("Whisper transcription failed: %s", e)
         raise HTTPException(status_code=422, detail="Audio transcription failed")
 
-    history = firebase.get_conversations(user_id, limit=5)
+    history = await asyncio.to_thread(firebase.get_conversations, user_id, 5)
     messages = []
     for convo in reversed(history):
         messages.extend(convo.get("messages", []))
@@ -75,9 +78,11 @@ async def voice_to_ai_stream(req: VoiceRequest, user_id: str = Depends(verify_to
         async for chunk in claude.ask_stream(messages):
             full_response += chunk
             yield chunk
-        firebase.save_conversation(user_id, messages + [
-            {"role": "assistant", "content": full_response}
-        ])
+        await asyncio.to_thread(
+            firebase.save_conversation,
+            user_id,
+            messages + [{"role": "assistant", "content": full_response}],
+        )
 
     return StreamingResponse(generate(), media_type="text/plain")
 
@@ -85,7 +90,7 @@ async def voice_to_ai_stream(req: VoiceRequest, user_id: str = Depends(verify_to
 @router.post("/speak")
 async def speak(req: TTSRequest, user_id: str = Depends(verify_token)):
     try:
-        audio = tts.synthesize(req.text, req.voice)
+        audio = await asyncio.to_thread(tts.synthesize, req.text, req.voice)
     except Exception as e:
         logger.error("TTS synthesis failed for user %s: %s", user_id, e)
         raise HTTPException(status_code=502, detail="Speech synthesis failed")

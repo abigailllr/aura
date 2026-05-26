@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
@@ -28,27 +29,32 @@ class RescheduleRequest(BaseModel):
 
 @router.post("/analyze")
 async def analyze_schedule(req: TokenRequest, user_id: str = Depends(verify_token)):
-    energy_doc = firebase.db().collection("energy_profiles").document(user_id).get()
+    energy_profile = await asyncio.to_thread(firebase.get_energy_profile, user_id)
 
-    if not energy_doc.exists:
+    if not energy_profile:
         raise HTTPException(status_code=404, detail="No energy profile found")
 
     try:
-        service = get_calendar_service(req.token)
-        events = fetch_events(service)
+        service = await asyncio.to_thread(get_calendar_service, req.token)
+        events = await asyncio.to_thread(fetch_events, service)
     except Exception as e:
         logger.error("Calendar fetch failed for user %s: %s", user_id, e)
         raise HTTPException(status_code=502, detail="Could not access Google Calendar")
 
-    analysis = analyze_and_suggest(events, energy_doc.to_dict())
+    try:
+        analysis = await asyncio.to_thread(analyze_and_suggest, events, energy_profile)
+    except Exception as e:
+        logger.error("Schedule analysis failed for user %s: %s", user_id, e)
+        raise HTTPException(status_code=502, detail="Schedule analysis failed")
+
     return analysis.model_dump()
 
 
 @router.post("/reschedule")
 async def reschedule(req: RescheduleRequest, user_id: str = Depends(verify_token)):
     try:
-        service = get_calendar_service(req.token)
-        reschedule_event(service, req.event_id, req.new_start, req.new_end)
+        service = await asyncio.to_thread(get_calendar_service, req.token)
+        await asyncio.to_thread(reschedule_event, service, req.event_id, req.new_start, req.new_end)
     except Exception as e:
         logger.error("Reschedule failed for user %s: %s", user_id, e)
         raise HTTPException(status_code=502, detail="Could not reschedule event")
@@ -59,8 +65,8 @@ async def reschedule(req: RescheduleRequest, user_id: str = Depends(verify_token
 @router.get("/events")
 async def get_events(access_token: str, user_id: str = Depends(verify_token)):
     try:
-        service = get_calendar_service({"access_token": access_token})
-        events = fetch_events(service)
+        service = await asyncio.to_thread(get_calendar_service, {"access_token": access_token})
+        events = await asyncio.to_thread(fetch_events, service)
     except Exception as e:
         logger.error("Calendar fetch failed for user %s: %s", user_id, e)
         raise HTTPException(status_code=502, detail="Could not access Google Calendar")

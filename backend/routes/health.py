@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import APIRouter, HTTPException, Depends
 
@@ -13,18 +14,20 @@ MIN_READINGS_FOR_ANALYSIS = 10
 
 @router.post("/biometrics")
 async def save_biometric(reading: BiometricReading, user_id: str = Depends(verify_token)):
-    doc_id = firebase.save_biometric(user_id, reading.model_dump(exclude={"user_id"}))
+    doc_id = await asyncio.to_thread(
+        firebase.save_biometric, user_id, reading.model_dump(exclude={"user_id"})
+    )
     return {"id": doc_id}
 
 
 @router.get("/biometrics")
 async def get_biometrics(limit: int = 500, user_id: str = Depends(verify_token)):
-    return firebase.get_biometrics(user_id, limit)
+    return await asyncio.to_thread(firebase.get_biometrics, user_id, limit)
 
 
 @router.get("/energy")
 async def get_energy_profile(user_id: str = Depends(verify_token)):
-    history = firebase.get_biometrics(user_id, limit=500)
+    history = await asyncio.to_thread(firebase.get_biometrics, user_id, 500)
 
     if len(history) < MIN_READINGS_FOR_ANALYSIS:
         return {
@@ -34,18 +37,18 @@ async def get_energy_profile(user_id: str = Depends(verify_token)):
         }
 
     try:
-        profile = claude.analyze_energy_patterns(history)
+        profile = await asyncio.to_thread(claude.analyze_energy_patterns, history)
     except Exception as e:
         logger.error("Energy analysis failed for user %s: %s", user_id, e)
         raise HTTPException(status_code=502, detail="Energy analysis failed")
 
-    firebase.db().collection("energy_profiles").document(user_id).set(profile)
+    await asyncio.to_thread(firebase.save_energy_profile, user_id, profile)
     return profile
 
 
 @router.get("/state")
 async def get_current_state(user_id: str = Depends(verify_token)):
-    readings = firebase.get_biometrics(user_id, limit=3)
+    readings = await asyncio.to_thread(firebase.get_biometrics, user_id, 3)
 
     if not readings:
         return {"state": "unknown"}
