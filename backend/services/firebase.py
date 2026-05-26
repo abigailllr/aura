@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime, timezone, timedelta
+
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
 
@@ -99,3 +101,51 @@ def upload_photo(user_id: str, image_bytes: bytes, person_id: str) -> str:
     blob.upload_from_string(image_bytes, content_type="image/jpeg")
     blob.make_public()
     return blob.public_url
+
+
+def get_active_user_ids(since_hours: int = 24) -> list[str]:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    docs = (
+        db().collection("biometrics")
+        .where("recorded_at", ">=", cutoff)
+        .stream()
+    )
+    seen: set[str] = set()
+    result = []
+    for d in docs:
+        uid = d.to_dict().get("user_id")
+        if uid and uid not in seen:
+            seen.add(uid)
+            result.append(uid)
+    return result
+
+
+def save_insight(user_id: str, text: str):
+    db().collection("insights").document().set({
+        "user_id": user_id,
+        "text": text,
+        "read": False,
+        "created_at": firestore.SERVER_TIMESTAMP,
+    })
+
+
+def get_unread_insights(user_id: str) -> list[dict]:
+    docs = (
+        db().collection("insights")
+        .where("user_id", "==", user_id)
+        .where("read", "==", False)
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .stream()
+    )
+    return [{"id": d.id, **d.to_dict()} for d in docs]
+
+
+def mark_insights_read(user_id: str):
+    docs = (
+        db().collection("insights")
+        .where("user_id", "==", user_id)
+        .where("read", "==", False)
+        .stream()
+    )
+    for d in docs:
+        d.reference.update({"read": True})
